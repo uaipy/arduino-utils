@@ -9,6 +9,7 @@
   "author": "Trem do mundo",
   "license": "ISC",
   "dependencies": {
+    "axios": "^1.4.0",
     "pino": "^8.15.0",
     "serialport": "^11.0.1"
   },
