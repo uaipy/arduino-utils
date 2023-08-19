@@ -1,18 +1,12 @@
 import {
-  loggerInfoInstance,
   loggerErrorInstance,
 } from "../infra/helpers/logger.js";
-
-const dataStorage = [];
+import { createProxyRequest } from "../infra/data/proxyRequest.js";
 
 export async function handleSerialPort(inputData) {
   try {
     const dataHandled = handleInputData(inputData);
-    dataStorage.push(dataHandled);
-    loggerInfoInstance({
-      msg: `data storage:`,
-      dataStorage,
-    });
+    createProxyRequest(dataHandled)
   } catch (err) {
     loggerErrorInstance({
       msg: `an error has occurred on send data to server`,
