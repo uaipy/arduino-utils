@@ -1,8 +1,9 @@
 import axios from "axios";
-
+import { loggerInfoInstance } from "../helpers/logger.js";
 export function createProxyRequest(data) {
+  const baseUrl = "http://localhost:3000";
   axios
-    .post("/device", data, {
+    .post(`${baseUrl}/message`, data, {
       headers: {
         "Content-type": "application/json; charset=UTF-8",
       },

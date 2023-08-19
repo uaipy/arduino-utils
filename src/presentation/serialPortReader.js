@@ -16,5 +16,5 @@ export async function handleSerialPort(inputData) {
 }
 
 function handleInputData(data) {
-  return JSON.parse(data.replace("\r", ""));
+  return data.replace("\r", "");
 }
