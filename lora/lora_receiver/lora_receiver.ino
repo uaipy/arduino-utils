@@ -12,27 +12,29 @@
 #define LORA_IQ_INVERSION_ON false
 
 #define RX_TIMEOUT_VALUE 1000
-#define BUFFER_SIZE 64
+#define BUFFER_SIZE 256 // Increased buffer size to handle larger packets
 
 // --- Receive Buffer ---
-char rxBuffer[BUFFER_SIZE];
-static RadioEvents_t radioEvents;
+char rxpacket[BUFFER_SIZE];
+static RadioEvents_t RadioEvents;
 
-int16_t rssi;
-int16_t packetSize;
-bool loraIdle = true;
+int16_t rssi = 0;
+uint16_t rxSize = 0;
+bool lora_idle = true;
 
 // --- Callback function on successful packet reception ---
 void OnRxDone(uint8_t *payload, uint16_t size, int16_t rssi_, int8_t snr);
 
 void setup() {
   Serial.begin(115200);
+  delay(100);
   Mcu.begin(HELTEC_BOARD, SLOW_CLK_TPYE);
 
   // Initialize LoRa with callback
-  radioEvents.RxDone = OnRxDone;
-  Radio.Init(&radioEvents);
+  RadioEvents.RxDone = OnRxDone;
+  Radio.Init(&RadioEvents);
   Radio.SetChannel(RF_FREQUENCY);
+
   Radio.SetRxConfig(MODEM_LORA, LORA_BANDWIDTH, LORA_SPREADING_FACTOR,
                     LORA_CODINGRATE, 0, LORA_PREAMBLE_LENGTH,
                     LORA_SYMBOL_TIMEOUT, LORA_FIX_LENGTH_PAYLOAD_ON,
@@ -40,9 +42,9 @@ void setup() {
 }
 
 void loop() {
-  if (loraIdle) {
-    loraIdle = false;
-    Serial.println("Waiting for incoming packet...");
+  if (lora_idle) {
+    lora_idle = false;
+    // Serial.println("Waiting for incoming packet...");
     Radio.Rx(0); // Continuous receive mode
   }
 
@@ -51,17 +53,20 @@ void loop() {
 
 // --- Handle received packet ---
 void OnRxDone(uint8_t *payload, uint16_t size, int16_t rssi_, int8_t snr) {
-  packetSize = size;
+  rxSize = size;
   rssi = rssi_;
 
-  memcpy(rxBuffer, payload, size);
-  rxBuffer[size] = '\0';
+  // Prevent buffer overflow when copying payload
+  if (size >= BUFFER_SIZE) size = BUFFER_SIZE - 1;
+
+  memcpy(rxpacket, payload, size);
+  rxpacket[size] = '\0';
 
   Radio.Sleep();
-  Serial.println(rxBuffer);
+  Serial.println(rxpacket);
 
   // Print RSSI and packet size if necessary
-  // Serial.printf("RSSI: %d | Size: %d bytes\n", rssi, packetSize);
+  // Serial.printf("RSSI: %d | Size: %d bytes\n", rssi, rxSize);
 
-  loraIdle = true;
+  lora_idle = true;
 }
