@@ -5,7 +5,7 @@ import requests
 
 SERIAL_PORT = '/dev/ttyUSB0'
 BAUD_RATE = 115200
-POST_URL = 'http://localhost:8000/'
+POST_URL = 'http://localhost:8000/readings'
 
 def conectar_serial():
     while True:
