@@ -1,2 +1,40 @@
 node_modules
 package-lock.json
+
+# Arquivos de bytecode e caches do Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Ambientes virtuais
+# Nunca envie seu ambiente virtual para o repositório!
+venv/
+env/
+.venv/
+.env/
+virtualenv/
+
+# Arquivos de configuração de editores e IDEs
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace
+
+# Arquivos de ambiente para variáveis sensíveis
+# NUNCA commite segredos, senhas ou chaves de API
+.env
+
+# Arquivos de sistema operacional
+.DS_Store
+Thumbs.db
+
+# Arquivos de distribuição/build
+/dist/
+/build/
+*.egg-info/
+
+# Arquivos de testes e cobertura de código
+.pytest_cache/
+.coverage
+htmlcov/

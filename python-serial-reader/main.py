@@ -23,7 +23,6 @@ try:
 except serial.SerialException as e:
     print(f"[FALHA] Não foi possível abrir a porta serial: {e}")
 except KeyboardInterrupt:
-    # Captura o Ctrl+C para uma saída limpa
     print("\n[INFO] Programa interrompido pelo usuário.")
 except Exception as e:
     print(f"[FALHA INESPERADA] {e}")
