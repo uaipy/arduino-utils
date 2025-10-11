@@ -1,0 +1,4 @@
+(fp_lib_table
+  (version 7)
+  (lib (name "headerPin_1mm")(type "KiCad")(uri "${KIPRJMOD}/libraries/headerPin_1mm.pretty")(options "")(descr ""))
+)
