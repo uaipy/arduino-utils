@@ -1,0 +1,188 @@
+#include "LoRaWan_APP.h"
+#include "Arduino.h"
+#include "DHT.h"
+#include <Wire.h>
+#include <DFRobot_SHT20.h>
+#include <RTClib.h>
+#include <SPI.h>
+#include <SD.h>
+
+// --- SD SPI pins ---
+#define SD_CS     5
+#define SD_MOSI   7
+#define SD_MISO   19
+#define SD_SCK    6
+
+SPIClass SPI_SD(HSPI);  // LoRa functionality already uses the board's default SPI pins
+
+// --- Sensor Definitions ---
+#define DHT_PIN 45
+#define DHT_TYPE DHT11
+DHT dht(DHT_PIN, DHT_TYPE);
+DFRobot_SHT20 sht20;
+RTC_DS3231 rtc;
+
+// --- I2C Pins for RTC and SHT20 ---
+#define I2C_SDA_PIN 41
+#define I2C_SCL_PIN 42
+
+// --- Hall Sensor Pins ---
+#define HALL_SENSOR1 3
+#define HALL_SENSOR2 2
+
+volatile int rainCount = 0;
+volatile bool sensor1_active = false;
+volatile bool sensor2_active = false;
+
+// --- Timing Control ---
+unsigned long lastTransmissionTime = 0;
+const unsigned long transmissionInterval = 2000;
+
+// --- LoRa Settings ---
+#define RF_FREQUENCY 915000000 // Hz
+#define TX_OUTPUT_POWER 5      // dBm
+#define LORA_BANDWIDTH 0
+#define LORA_SPREADING_FACTOR 7
+#define LORA_CODINGRATE 1
+#define LORA_PREAMBLE_LENGTH 8
+#define LORA_SYMBOL_TIMEOUT 0
+#define LORA_FIX_LENGTH_PAYLOAD_ON false
+#define LORA_IQ_INVERSION_ON false
+
+#define RX_TIMEOUT_VALUE 1000
+#define BUFFER_SIZE 200
+char txPacket[BUFFER_SIZE];
+bool loraIdle = true;
+
+static RadioEvents_t RadioEvents;
+void OnTxDone(void);
+void OnTxTimeout(void);
+
+// --- ISR Functions ---
+void IRAM_ATTR hallSensor1_ISR() {
+  if (!sensor1_active) {
+    rainCount++;
+    sensor1_active = true;
+  }
+}
+
+void IRAM_ATTR hallSensor2_ISR() {
+  if (!sensor2_active) {
+    rainCount++;
+    sensor2_active = true;
+  }
+}
+
+void resetHallSensorFlags() {
+  if (digitalRead(HALL_SENSOR1) == HIGH) {
+    sensor1_active = false;
+  }
+  if (digitalRead(HALL_SENSOR2) == HIGH) {
+    sensor2_active = false;
+  }
+}
+
+// --- Setup ---
+void setup() {
+  Serial.begin(115200);
+  SPI_SD.begin(SD_SCK, SD_MISO, SD_MOSI, SD_CS);
+
+  if (!SD.begin(SD_CS, SPI_SD)) {
+    Serial.println("Falha ao inicializar SD com SPI alternativo.");
+    while (1); // Stop if SD fails
+  }
+  Serial.println("Cartão SD OK!");
+
+  // Initialize I2C and sensors
+  Wire.begin(I2C_SDA_PIN, I2C_SCL_PIN);
+  sht20.initSHT20();
+  delay(100);
+  sht20.checkSHT20();
+  dht.begin();
+
+  // Initialize RTC
+  if (!rtc.begin()) {
+    Serial.println("Failed to initialize RTC.");
+    while (1); // Stop if RTC fails
+  }
+
+  // Initialize Hall sensors
+  pinMode(HALL_SENSOR1, INPUT_PULLUP);
+  pinMode(HALL_SENSOR2, INPUT_PULLUP);
+
+  attachInterrupt(digitalPinToInterrupt(HALL_SENSOR1), hallSensor1_ISR, FALLING);
+  attachInterrupt(digitalPinToInterrupt(HALL_SENSOR2), hallSensor2_ISR, FALLING);
+
+  rainCount = 0;
+
+  // Initialize LoRa
+  Mcu.begin(HELTEC_BOARD, SLOW_CLK_TPYE);
+  RadioEvents.TxDone = OnTxDone;
+  RadioEvents.TxTimeout = OnTxTimeout;
+  Radio.Init(&RadioEvents);
+  Radio.SetChannel(RF_FREQUENCY);
+  Radio.SetTxConfig(MODEM_LORA, TX_OUTPUT_POWER, 0, LORA_BANDWIDTH,
+                    LORA_SPREADING_FACTOR, LORA_CODINGRATE,
+                    LORA_PREAMBLE_LENGTH, LORA_FIX_LENGTH_PAYLOAD_ON,
+                    true, 0, 0, LORA_IQ_INVERSION_ON, 3000);
+
+  Serial.println("System initialized with RTC.");
+}
+
+// --- Main Loop ---
+void loop() {
+  Radio.IrqProcess();
+
+  resetHallSensorFlags();
+
+  unsigned long currentTime = millis();
+  if (loraIdle && (currentTime - lastTransmissionTime >= transmissionInterval)) {
+    lastTransmissionTime = currentTime;
+
+    float dhtTemperature = dht.readTemperature();
+    float dhtHumidity = dht.readHumidity();
+    float shtTemperature = sht20.readTemperature();
+    float shtHumidity = sht20.readHumidity();
+    float rainMM = rainCount * 0.2794;
+    DateTime now = rtc.now();
+
+    if (isnan(dhtTemperature) || isnan(dhtHumidity) || isnan(shtTemperature) || isnan(shtHumidity)) {
+      Serial.println("Sensor read failed.");
+      return;
+    }
+
+    char timestamp[30];
+    snprintf(timestamp, sizeof(timestamp), "%04d-%02d-%02dT%02d:%02d:%02d.000Z",
+             now.year(), now.month(), now.day(), now.hour(), now.minute(), now.second());
+
+    snprintf(txPacket, BUFFER_SIZE,
+      "{\"dht_temperature\":%.1f,\"dht_humidity\":%.1f,\"sht_temperature\":%.1f,\"sht_humidity\":%.1f,\"rain\":%.2f,\"local_date_read\":\"%s\",\"device_id\":1}",
+      dhtTemperature, dhtHumidity, shtTemperature, shtHumidity, rainMM, timestamp);
+
+    Serial.printf("\n%s", txPacket);
+
+    // Save to SD card
+    File arquivo = SD.open("/teste.txt", FILE_APPEND);
+    if (arquivo) {
+      arquivo.println(txPacket);
+      arquivo.close();
+      //Serial.println("Saved to SD card.");
+    } else {
+      Serial.println("Error opening file for writing.");
+    }
+
+    Radio.Send((uint8_t *)txPacket, strlen(txPacket));
+    loraIdle = false;
+  }
+}
+
+// --- LoRa Callbacks ---
+void OnTxDone(void) {
+  loraIdle = true;
+}
+
+void OnTxTimeout(void) {
+  Radio.Sleep();
+  Serial.println("Transmission timeout.");
+  loraIdle = true;
+}
